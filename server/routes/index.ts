@@ -11,7 +11,8 @@ import { Day } from "@shared/utils/time";
 import env from "@server/env";
 import { NotFoundError } from "@server/errors";
 import shareDomains from "@server/middlewares/shareDomains";
-import { Integration } from "@server/models";
+import { Integration, Team } from "@server/models";
+import AuthenticationHelper from "@server/models/helpers/AuthenticationHelper";
 import { getSessionRedirectUrl } from "@server/utils/authentication";
 import { SessionsCookieHelper } from "@server/utils/SessionsCookieHelper";
 import { getTeamFromContext } from "@server/utils/passport";
@@ -224,6 +225,27 @@ router.get("{/*path}", async (ctx, next) => {
       url.search = ctx.search;
       ctx.redirect(url.toString());
       return;
+    }
+  }
+
+  // Providers that already know who the visitor is, like a forward-auth proxy,
+  // sign them in before the app loads instead of showing the login page.
+  const canAutoSignIn = AuthenticationHelper.providers.some(
+    (provider) => provider.value.autoSignInUrl
+  );
+  if (canAutoSignIn && !team?.isSuspended) {
+    const teamWithProviders = team
+      ? await Team.scope("withAuthenticationProviders").findByPk(team.id)
+      : null;
+    const providers = await AuthenticationHelper.providersForTeam(
+      teamWithProviders ?? undefined
+    );
+    for (const provider of providers) {
+      const url = await provider.value.autoSignInUrl?.(ctx);
+      if (url) {
+        ctx.redirect(url);
+        return;
+      }
     }
   }
 

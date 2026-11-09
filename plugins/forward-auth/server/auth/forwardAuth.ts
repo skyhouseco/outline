@@ -14,6 +14,7 @@ import { sequelize } from "@server/storage/database";
 import { signIn } from "@server/utils/authentication";
 import { getTeamFromContext } from "@server/utils/passport";
 import config from "../../plugin.json";
+import { clearAutoSignInAttempt, safeReturnPath } from "../autoSignIn";
 import env from "../env";
 import { parseRoles, resolveRole } from "../roles";
 
@@ -104,7 +105,19 @@ router.get(config.id, async (ctx: Context) => {
 
     const client =
       ctx.query.client === Client.Desktop ? Client.Desktop : Client.Web;
-    return signIn(ctx, config.id, { ...result, client });
+    await signIn(ctx, config.id, { ...result, client });
+
+    // Return to the page that started the sign-in, unless signIn refused it
+    // and redirected to a notice.
+    const location = ctx.response.get("Location");
+    if (ctx.status === 302 && !location.includes("notice=")) {
+      clearAutoSignInAttempt(ctx);
+      const path = safeReturnPath(ctx.query.path);
+      if (path && client === Client.Web) {
+        ctx.redirect(path);
+      }
+    }
+    return;
   } catch (err) {
     const error = toError(err);
     const id = "id" in error && typeof error.id === "string" ? error.id : null;

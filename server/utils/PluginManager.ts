@@ -1,6 +1,7 @@
 import path from "node:path";
 import { glob } from "glob";
 import type Router from "@koa/router";
+import type { Context } from "koa";
 import { isArray, sortBy } from "es-toolkit/compat";
 import type { z } from "zod";
 import type {
@@ -72,6 +73,12 @@ type PluginValueMap = {
     allowEmailMatch?: boolean;
     /** Creates a client to validate and refresh the provider's access tokens. */
     oauthClient?: () => OAuthClient;
+    /**
+     * Returns the URL to sign in at when a page is requested without a
+     * session, for providers that already know who the visitor is, eg from a
+     * proxy. When undefined the app is served and shows the login page.
+     */
+    autoSignInUrl?: (ctx: Context) => Promise<string | undefined>;
   };
   // oxlint-disable-next-line @typescript-eslint/no-explicit-any -- typeof BaseEmail<EmailProps> isn't assignable from BaseEmail<Subtype>; plugins register heterogeneous template Props.
   [Hook.EmailTemplate]: Concrete<typeof BaseEmail<any>>;
