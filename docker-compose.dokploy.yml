@@ -1,0 +1,102 @@
+# Production deployment of the SkyHouse fork on Dokploy (wiki.skyhouse.ai).
+#
+# Differences from the upstream image deployment:
+# - The image is built from this fork (Dockerfile.dokploy), it contains the
+#   forward-auth plugin.
+# - Sign-in is handled by the SkyHouse oauth2-proxy. The router that serves
+#   wiki.skyhouse.ai must use the `sso-noauthz` middleware for `/` and the full
+#   `sso` middleware for `/auth/forward-auth` only, see plugins/forward-auth.
+# - This container must never publish host ports, the proxy has to be the only
+#   way in, otherwise the identity headers can be forged.
+
+services:
+  outline:
+    # Built by Dokploy from this repository. The build needs several GB of RAM.
+    build:
+      context: .
+      dockerfile: Dockerfile.dokploy
+    image: skyhouse-outline:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      URL: https://wiki.skyhouse.ai
+      PORT: "3000"
+      FORCE_HTTPS: "true"
+      ENABLE_UPDATES: "false"
+      SECRET_KEY: ${SECRET_KEY:?Set the wiki application secret}
+      UTILS_SECRET: ${UTILS_SECRET:?Set the wiki utility secret}
+      DATABASE_URL: ${DATABASE_URL:?Set the dedicated wiki database URL}
+      PGSSLMODE: ${PGSSLMODE:-verify-full}
+      REDIS_URL: redis://redis:6379
+      FILE_STORAGE: s3
+      AWS_REGION: auto
+      AWS_S3_FORCE_PATH_STYLE: "true"
+      AWS_S3_UPLOAD_METHOD: put
+      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
+      AWS_S3_ACL: ""
+      AWS_S3_UPLOAD_BUCKET_NAME: ${AWS_S3_UPLOAD_BUCKET_NAME:?Set the approved private wiki bucket}
+      AWS_S3_UPLOAD_BUCKET_URL: ${AWS_S3_UPLOAD_BUCKET_URL:?Set the approved R2 S3 API endpoint}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?Set the wiki bucket access key ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?Set the wiki bucket secret access key}
+      # SMTP stays for notifications. Turn off "email sign-in" in the workspace
+      # authentication settings, or the login page shows two options and does
+      # not redirect to the proxy automatically.
+      SMTP_HOST: ${SMTP_HOST:?Set the approved SMTP host}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:?Set the approved SMTP username}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?Set the approved SMTP password}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:?Set the approved wiki sender}
+      # Sign-in through the SkyHouse oauth2-proxy (plugins/forward-auth).
+      FORWARD_AUTH_ENABLED: "true"
+      FORWARD_AUTH_DISPLAY_NAME: SkyHouse SSO
+      FORWARD_AUTH_LOGOUT_URL: /oauth2/sign_out
+      # Entra app role values, sent by the proxy in X-Auth-Request-Groups.
+      FORWARD_AUTH_ADMIN_ROLES: ${FORWARD_AUTH_ADMIN_ROLES:-outline-admins}
+      FORWARD_AUTH_MEMBER_ROLES: ${FORWARD_AUTH_MEMBER_ROLES:-outline-users}
+      FORWARD_AUTH_VIEWER_ROLES: ${FORWARD_AUTH_VIEWER_ROLES:-outline-viewers}
+    configs:
+      - source: wiki_postgres_ca
+        target: /etc/outline/wiki-postgres-ca.crt
+    labels:
+      traefik.enable: "false"
+    networks:
+      ingress:
+        aliases:
+          - skyhouse-ai-wiki-outline
+      redis_private:
+
+  redis:
+    image: docker.io/library/redis:7.4.7-alpine@sha256:02f2cc4882f8bf87c79a220ac958f58c700bdec0dfb9b9ea61b62fb0e8f1bfcf
+    restart: unless-stopped
+    command: [redis-server, --appendonly, "yes", --maxmemory-policy, noeviction]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis_data:/data
+    labels:
+      traefik.enable: "false"
+    networks:
+      redis_private:
+
+networks:
+  ingress:
+    external: true
+    name: ${WIKI_INGRESS_NETWORK:?Set the approved external network for this wiki runtime}
+  redis_private:
+    internal: true
+
+volumes:
+  redis_data:
+
+configs:
+  # Public CA certificate of the wiki database, expires 2029-02-09. Used through
+  # `sslrootcert=/etc/outline/wiki-postgres-ca.crt` in DATABASE_URL.
+  wiki_postgres_ca:
+    file: ./wiki-postgres-ca.crt

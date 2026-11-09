@@ -409,6 +409,12 @@ export default class AuthStore extends Store<Team> {
       this.logoutRedirectUri = "/auth/oidc.logout";
     }
 
+    // Sessions from the forward-auth proxy must also end at the proxy, or the
+    // next request would sign the user straight back in.
+    if (userInitiated && this.lastSignedIn === "forward-auth") {
+      this.logoutRedirectUri = "/auth/forward-auth.logout";
+    }
+
     if (clearCache) {
       // clear IndexedDB databases used for document caching
       await deleteAllDatabases();

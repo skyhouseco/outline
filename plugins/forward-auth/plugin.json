@@ -1,0 +1,6 @@
+{
+  "id": "forward-auth",
+  "name": "Single sign-on",
+  "priority": 5,
+  "description": "Signs users in from identity headers set by a trusted forward-auth proxy, such as oauth2-proxy behind Traefik."
+}

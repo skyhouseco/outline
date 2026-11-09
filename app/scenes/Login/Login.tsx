@@ -81,8 +81,8 @@ function Login({ children, onBack }: Props) {
     !auth.authenticated &&
     !auth.isFetching &&
     config?.providers.length === 1 &&
-    config.providers[0].id === "oidc" &&
-    !env.OIDC_DISABLE_REDIRECT &&
+    ((config.providers[0].id === "oidc" && !env.OIDC_DISABLE_REDIRECT) ||
+      config.providers[0].id === "forward-auth") &&
     !query.get("notice") &&
     !query.get("logout");
 
