@@ -3,9 +3,10 @@
 # Differences from the upstream image deployment:
 # - The image is built from this fork (Dockerfile.dokploy), it contains the
 #   forward-auth plugin.
-# - Sign-in is handled by the SkyHouse oauth2-proxy. The router that serves
-#   wiki.skyhouse.ai must use the `sso-noauthz` middleware for `/` and the full
-#   `sso` middleware for `/auth/forward-auth` only, see plugins/forward-auth.
+# - Sign-in is handled by the SkyHouse oauth2-proxy. The Traefik labels below
+#   route wiki.skyhouse.ai with the `sso-noauthz` middleware, and only
+#   `/auth/forward-auth` with the full `sso` middleware. Do not also add a
+#   domain for this service in the Dokploy UI.
 # - This container must never publish host ports, the proxy has to be the only
 #   way in, otherwise the identity headers can be forged.
 
@@ -62,7 +63,25 @@ services:
       - source: wiki_postgres_ca
         target: /etc/outline/wiki-postgres-ca.crt
     labels:
-      traefik.enable: "false"
+      traefik.enable: "true"
+      # Traefik reaches the wiki over the ingress network, it must be attached
+      # to it, and to dokploy-network for the oauth2-proxy middlewares.
+      traefik.docker.network: ${WIKI_INGRESS_NETWORK}
+      traefik.http.services.skyhouse-wiki.loadbalancer.server.port: "3000"
+      # Everything: SSO gate without Authorization, which Outline reads before
+      # its own session cookie and would reject.
+      traefik.http.routers.skyhouse-wiki.rule: Host(`wiki.skyhouse.ai`)
+      traefik.http.routers.skyhouse-wiki.entrypoints: websecure
+      traefik.http.routers.skyhouse-wiki.tls.certresolver: letsencrypt
+      traefik.http.routers.skyhouse-wiki.service: skyhouse-wiki
+      traefik.http.routers.skyhouse-wiki.middlewares: oauth-errors@docker,sso-noauthz@docker
+      # Sign-in only: the full SSO gate, the plugin reads the person's name
+      # from the forwarded ID token. The longer rule wins over the one above.
+      traefik.http.routers.skyhouse-wiki-signin.rule: Host(`wiki.skyhouse.ai`) && Path(`/auth/forward-auth`)
+      traefik.http.routers.skyhouse-wiki-signin.entrypoints: websecure
+      traefik.http.routers.skyhouse-wiki-signin.tls.certresolver: letsencrypt
+      traefik.http.routers.skyhouse-wiki-signin.service: skyhouse-wiki
+      traefik.http.routers.skyhouse-wiki-signin.middlewares: oauth-errors@docker,sso@docker
     networks:
       ingress:
         aliases:
