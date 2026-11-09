@@ -21,7 +21,8 @@ class ForwardAuthPluginEnvironment extends Environment {
     environment.FORWARD_AUTH_DISPLAY_NAME || "Single sign-on";
 
   /**
-   * Proxy roles that make a user a workspace admin, comma separated.
+   * Proxy roles that make a user a workspace admin, comma separated. When
+   * set, admins without one of these roles are demoted to member.
    */
   @IsOptional()
   public FORWARD_AUTH_ADMIN_ROLES = this.toOptionalCommaList(

@@ -138,6 +138,64 @@ describe("forward-auth", () => {
     expect(user).toBeNull();
   });
 
+  describe("with only admin roles configured", () => {
+    beforeEach(() => {
+      env.FORWARD_AUTH_ADMIN_ROLES = ["outline-admins", "admin"];
+      env.FORWARD_AUTH_MEMBER_ROLES = undefined;
+      env.FORWARD_AUTH_VIEWER_ROLES = undefined;
+    });
+
+    afterEach(() => {
+      env.FORWARD_AUTH_ADMIN_ROLES = ["outline-admins"];
+      env.FORWARD_AUTH_MEMBER_ROLES = ["outline-users"];
+      env.FORWARD_AUTH_VIEWER_ROLES = ["outline-viewers"];
+    });
+
+    it("should sign in a user without any role as a member", async () => {
+      const { team, host } = await buildForwardAuthTeam();
+      const email = faker.internet.email().toLowerCase();
+      const res = await signIn(host, { "x-auth-request-email": email });
+
+      expect(res.headers.get("location")).not.toContain("notice=");
+      const user = await User.findOne({ where: { email, teamId: team.id } });
+      expect(user?.role).toEqual(UserRole.Member);
+    });
+
+    it("should make a user with the admin role an admin", async () => {
+      const { team, host } = await buildForwardAuthTeam();
+      const email = faker.internet.email().toLowerCase();
+      await signIn(host, {
+        "x-auth-request-email": email,
+        "x-auth-request-groups": "admin",
+      });
+
+      const user = await User.findOne({ where: { email, teamId: team.id } });
+      expect(user?.role).toEqual(UserRole.Admin);
+    });
+
+    it("should demote an admin who lost the admin role", async () => {
+      const { team, host } = await buildForwardAuthTeam();
+      await buildAdmin({ teamId: team.id });
+      const admin = await buildAdmin({ teamId: team.id });
+      await signIn(host, { "x-auth-request-email": admin.email! });
+
+      await admin.reload();
+      expect(admin.role).toEqual(UserRole.Member);
+    });
+
+    it("should keep a viewer set in Outline", async () => {
+      const { team, host } = await buildForwardAuthTeam();
+      const viewer = await buildUser({
+        teamId: team.id,
+        role: UserRole.Viewer,
+      });
+      await signIn(host, { "x-auth-request-email": viewer.email! });
+
+      await viewer.reload();
+      expect(viewer.role).toEqual(UserRole.Viewer);
+    });
+  });
+
   it("should not let the ID token choose the account", async () => {
     const { team, host } = await buildForwardAuthTeam();
     const victimId = faker.string.uuid();

@@ -54,10 +54,10 @@ services:
       FORWARD_AUTH_ENABLED: "true"
       FORWARD_AUTH_DISPLAY_NAME: SkyHouse SSO
       FORWARD_AUTH_LOGOUT_URL: /oauth2/sign_out
-      # Entra app role values, sent by the proxy in X-Auth-Request-Groups.
-      FORWARD_AUTH_ADMIN_ROLES: ${FORWARD_AUTH_ADMIN_ROLES:-outline-admins}
-      FORWARD_AUTH_MEMBER_ROLES: ${FORWARD_AUTH_MEMBER_ROLES:-outline-users}
-      FORWARD_AUTH_VIEWER_ROLES: ${FORWARD_AUTH_VIEWER_ROLES:-outline-viewers}
+      # Entra app role values, sent by the proxy in X-Auth-Request-Groups. Users
+      # with one of these roles are admins, admins without one are demoted to
+      # member. Everyone else signs in with their current or the default role.
+      FORWARD_AUTH_ADMIN_ROLES: ${FORWARD_AUTH_ADMIN_ROLES:-outline-admins,admin}
     configs:
       - source: wiki_postgres_ca
         target: /etc/outline/wiki-postgres-ca.crt

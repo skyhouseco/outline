@@ -13,16 +13,21 @@ export interface RoleMapping {
 /**
  * Resolves the workspace role for a user from the roles reported by the proxy.
  * The highest matching role wins. When no member roles are configured, users
- * without a matching role keep their current role.
+ * without a matching role keep their current role, except admins, who are
+ * demoted to member when admin roles are configured and they no longer have
+ * one. This makes the admin role proxy managed and leaves other roles to be
+ * managed in Outline.
  *
  * @param proxyRoles the roles reported by the proxy for the user.
  * @param mapping the configured mapping of proxy roles to workspace roles.
+ * @param currentRole the user's current workspace role, if they exist.
  * @returns the workspace role, `null` when the user must be refused, or
  * `undefined` when the role must not be changed.
  */
 export function resolveRole(
   proxyRoles: string[],
-  mapping: RoleMapping
+  mapping: RoleMapping,
+  currentRole?: UserRole
 ): UserRole | null | undefined {
   const admin = mapping.admin ?? [];
   const member = mapping.member ?? [];
@@ -44,7 +49,13 @@ export function resolveRole(
   if (has(viewer)) {
     return UserRole.Viewer;
   }
-  return member.length ? null : undefined;
+  if (member.length) {
+    return null;
+  }
+  if (admin.length && currentRole === UserRole.Admin) {
+    return UserRole.Member;
+  }
+  return undefined;
 }
 
 /**

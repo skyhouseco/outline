@@ -46,13 +46,13 @@ router.get(config.id, async (ctx: Context) => {
   }
 
   const proxyRoles = parseRoles(ctx.request.get(Headers.roles));
-  const role = resolveRole(proxyRoles, {
+  const mapping = {
     admin: env.FORWARD_AUTH_ADMIN_ROLES,
     member: env.FORWARD_AUTH_MEMBER_ROLES,
     viewer: env.FORWARD_AUTH_VIEWER_ROLES,
-  });
+  };
 
-  if (role === null) {
+  if (resolveRole(proxyRoles, mapping) === null) {
     Logger.info("authentication", "Forward auth user has no allowed role", {
       email,
       proxyRoles,
@@ -97,6 +97,7 @@ router.get(config.id, async (ctx: Context) => {
     });
 
     // Suspended accounts are refused by signIn, their role is left alone.
+    const role = resolveRole(proxyRoles, mapping, result.user.role);
     if (role && !result.user.isSuspended) {
       await syncRole(result.user, role, ctx.ip);
     }

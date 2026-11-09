@@ -30,6 +30,16 @@ describe("resolveRole", () => {
     expect(resolveRole(["scraper-admins"], mapping)).toBeNull();
   });
 
+  it("should demote an admin without an admin role when member roles are not set", () => {
+    const adminOnly = { admin: ["outline-admins", "admin"] };
+    expect(resolveRole(["admin"], adminOnly, UserRole.Member)).toEqual(
+      UserRole.Admin
+    );
+    expect(resolveRole([], adminOnly, UserRole.Admin)).toEqual(UserRole.Member);
+    expect(resolveRole([], adminOnly, UserRole.Viewer)).toBeUndefined();
+    expect(resolveRole([], adminOnly)).toBeUndefined();
+  });
+
   it("should leave the role unchanged when member roles are not set", () => {
     const withoutMember = { admin: ["outline-admins"], viewer: ["guests"] };
     expect(resolveRole([], withoutMember)).toBeUndefined();
