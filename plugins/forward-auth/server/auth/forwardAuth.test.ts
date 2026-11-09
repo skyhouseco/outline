@@ -11,6 +11,7 @@ import {
 } from "@server/test/factories";
 import { Hook, PluginManager } from "@server/utils/PluginManager";
 import config from "../../plugin.json";
+import { autoSignInUrl } from "../autoSignIn";
 import env from "../env";
 import router from "./forwardAuth";
 
@@ -23,7 +24,7 @@ env.FORWARD_AUTH_VIEWER_ROLES = ["outline-viewers"];
 PluginManager.add({
   ...config,
   type: Hook.AuthProvider,
-  value: { router, id: config.id },
+  value: { router, id: config.id, autoSignInUrl },
 });
 
 const { getTestServer } = await import("@server/test/support");
@@ -57,6 +58,17 @@ function signIn(host: string, headers: Record<string, string>) {
     redirect: "manual",
     headers: { host, ...headers },
   });
+}
+
+/**
+ * Returns the path and query a response redirects to.
+ *
+ * @param res the response.
+ * @returns the redirect path and query.
+ */
+function location(res: { headers: { get(name: string): string | null } }) {
+  const url = new URL(res.headers.get("location") ?? "", "http://localhost");
+  return `${url.pathname}${url.search}`;
 }
 
 describe("forward-auth", () => {
@@ -241,6 +253,111 @@ describe("forward-auth", () => {
     expect(res.headers.get("location")).toContain("notice=user-suspended");
     await user.reload();
     expect(user.role).toEqual(UserRole.Member);
+  });
+
+  it("should return to the requested page after signing in", async () => {
+    const { host } = await buildForwardAuthTeam();
+    const res = await server.get("/auth/forward-auth?path=%2Fdoc%2Fabc", {
+      redirect: "manual",
+      headers: {
+        host,
+        "x-auth-request-email": faker.internet.email().toLowerCase(),
+        "x-auth-request-groups": "outline-users",
+      },
+    });
+
+    expect(res.status).toEqual(302);
+    expect(location(res)).toEqual("/doc/abc");
+  });
+
+  it("should not return to another host after signing in", async () => {
+    const { host } = await buildForwardAuthTeam();
+    const res = await server.get("/auth/forward-auth?path=%2F%2Fevil.com", {
+      redirect: "manual",
+      headers: {
+        host,
+        "x-auth-request-email": faker.internet.email().toLowerCase(),
+        "x-auth-request-groups": "outline-users",
+      },
+    });
+
+    expect(res.status).toEqual(302);
+    expect(res.headers.get("location")).not.toContain("evil.com");
+  });
+
+  describe("page requests", () => {
+    /**
+     * Requests an app page through the proxy.
+     *
+     * @param path the page path.
+     * @param headers extra request headers.
+     * @returns the response.
+     */
+    async function page(path: string, headers: Record<string, string> = {}) {
+      const { host } = await buildForwardAuthTeam();
+      return server.get(path, {
+        redirect: "manual",
+        headers: {
+          host,
+          "x-auth-request-email": faker.internet.email().toLowerCase(),
+          ...headers,
+        },
+      });
+    }
+
+    it("should sign in without showing the login page", async () => {
+      const res = await page("/");
+
+      expect(res.status).toEqual(302);
+      expect(location(res)).toEqual("/auth/forward-auth");
+      expect(res.headers.get("set-cookie")).toContain("forwardAuthAttempt=1");
+    });
+
+    it("should keep the requested page", async () => {
+      const res = await page("/doc/abc?x=1");
+
+      expect(res.status).toEqual(302);
+      expect(location(res)).toEqual(
+        "/auth/forward-auth?path=%2Fdoc%2Fabc%3Fx%3D1"
+      );
+    });
+
+    it("should show the page after a failed sign-in", async () => {
+      const res = await page("/?notice=auth-error");
+
+      expect(res.status).not.toEqual(302);
+    });
+
+    it("should show the page after logging out", async () => {
+      const res = await page("/?logout=true");
+
+      expect(res.status).not.toEqual(302);
+    });
+
+    it("should not sign in again while an attempt is in progress", async () => {
+      const res = await page("/", { cookie: "forwardAuthAttempt=1" });
+
+      expect(res.status).not.toEqual(302);
+    });
+
+    it("should not sign in a visitor that already has a session", async () => {
+      const user = await buildUser();
+      const res = await page("/", {
+        cookie: `accessToken=${user.getSessionToken()}`,
+      });
+
+      expect(res.status).not.toEqual(302);
+    });
+
+    it("should not sign in without the proxy header", async () => {
+      const { host } = await buildForwardAuthTeam();
+      const res = await server.get("/", {
+        redirect: "manual",
+        headers: { host },
+      });
+
+      expect(res.status).not.toEqual(302);
+    });
   });
 
   it("should redirect logout to the proxy", async () => {
