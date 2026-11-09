@@ -77,21 +77,33 @@ function Login({ children, onBack }: Props) {
   const [spendPostLoginPath] = usePostLoginPath();
   const hasRedirectedToOidc = React.useRef(false);
 
+  // Behind a forward-auth proxy every visitor is already signed in to the
+  // proxy, so it is used even when other providers, like email, are enabled.
+  const redirectProvider =
+    config?.providers.find((provider) => provider.id === "forward-auth") ??
+    (config?.providers.length === 1 &&
+    config.providers[0].id === "oidc" &&
+    !env.OIDC_DISABLE_REDIRECT
+      ? config.providers[0]
+      : undefined);
+
   const shouldRedirectToOidc =
     !auth.authenticated &&
     !auth.isFetching &&
-    config?.providers.length === 1 &&
-    ((config.providers[0].id === "oidc" && !env.OIDC_DISABLE_REDIRECT) ||
-      config.providers[0].id === "forward-auth") &&
+    !!redirectProvider &&
     !query.get("notice") &&
     !query.get("logout");
 
   React.useEffect(() => {
-    if (shouldRedirectToOidc && !hasRedirectedToOidc.current && config) {
+    if (
+      shouldRedirectToOidc &&
+      !hasRedirectedToOidc.current &&
+      redirectProvider
+    ) {
       hasRedirectedToOidc.current = true;
-      window.location.href = getRedirectUrl(config.providers[0].authUrl);
+      window.location.href = getRedirectUrl(redirectProvider.authUrl);
     }
-  }, [shouldRedirectToOidc, config]);
+  }, [shouldRedirectToOidc, redirectProvider]);
 
   const handleReset = React.useCallback(() => {
     setEmailLinkSentTo("");
