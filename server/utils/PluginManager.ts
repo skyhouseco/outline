@@ -1,16 +1,19 @@
 import path from "node:path";
 import { glob } from "glob";
 import type Router from "@koa/router";
+import type Koa from "koa";
 import type { Context } from "koa";
 import { isArray, sortBy } from "es-toolkit/compat";
 import type { z } from "zod";
 import type {
+  AuthenticationType,
   Concrete,
   EmbedIntegrationSettings,
   IntegrationService,
   LinkedAccountIntegrationSettings,
 } from "@shared/types";
 import type BaseEmail from "@server/emails/templates/BaseEmail";
+import type User from "@server/models/User";
 import type { ImportsCreateBody } from "@server/routes/api/imports/schema";
 import env from "@server/env";
 import Logger from "@server/logging/Logger";
@@ -55,6 +58,22 @@ export enum Hook {
   UnfurlProvider = "unfurl",
   Uninstall = "uninstall",
   GroupSyncProvider = "groupSyncProvider",
+  MCP = "mcp",
+  Mount = "mount",
+}
+
+/** A completed call to an MCP tool. */
+export interface McpToolCall {
+  /** The user the call was made as. */
+  user: User;
+  /** The name of the tool. */
+  tool: string;
+  /** How the caller authenticated, an API key or an OAuth access token. */
+  authType: AuthenticationType;
+  /** Whether the tool returned a result rather than an error. */
+  ok: boolean;
+  /** How long the call took, in milliseconds. */
+  durationMs: number;
 }
 
 /**
@@ -104,6 +123,20 @@ type PluginValueMap = {
   [Hook.Uninstall]: UninstallSignature;
   [Hook.UnfurlProvider]: { unfurl: UnfurlSignature; cacheExpiry: number };
   [Hook.GroupSyncProvider]: { id: string; provider: GroupSyncProvider };
+  [Hook.MCP]: {
+    /**
+     * Returns a message when the user may not use the MCP server, the request
+     * is then refused with it. Runs after the credential is verified.
+     */
+    refuse?: (user: User) => Promise<string | undefined>;
+    /** Called after each tool call, failures are logged and ignored. */
+    onToolCall?: (call: McpToolCall) => Promise<void>;
+  };
+  /**
+   * A Koa app mounted on the web server at a path, before the CSRF and CSP
+   * middleware, for machine clients outside the API.
+   */
+  [Hook.Mount]: { path: string; app: Koa };
 };
 
 export type Plugin<T extends Hook> = {

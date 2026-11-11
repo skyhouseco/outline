@@ -59,6 +59,9 @@ services:
       # with one of these roles are admins, admins without one are demoted to
       # member. Everyone else signs in with their current or the default role.
       FORWARD_AUTH_ADMIN_ROLES: ${FORWARD_AUTH_ADMIN_ROLES:-outline-admins,admin}
+      # Secret of the SkyHouse MCP hub (plugins/mcp-hub), the same value as the
+      # wiki's secret on the hub's Apps page. Unset turns /admin/mcp off.
+      MCP_HUB_TOKEN: ${MCP_HUB_TOKEN:-}
     configs:
       - source: wiki_postgres_ca
         target: /etc/outline/wiki-postgres-ca.crt
@@ -82,6 +85,40 @@ services:
       traefik.http.routers.skyhouse-wiki-signin.tls.certresolver: letsencrypt
       traefik.http.routers.skyhouse-wiki-signin.service: skyhouse-wiki
       traefik.http.routers.skyhouse-wiki-signin.middlewares: oauth-errors@docker,sso@docker
+      # Machine clients, without the SSO gate: the MCP endpoint and the OAuth
+      # endpoints MCP clients call from their servers. Exact paths only, the
+      # consent page /oauth/authorize stays behind the gate above.
+      traefik.http.routers.skyhouse-wiki-mcp.rule: >-
+        Host(`wiki.skyhouse.ai`) && (Path(`/mcp`) || Path(`/mcp/`) ||
+        Path(`/.well-known/oauth-authorization-server`) ||
+        Path(`/.well-known/oauth-protected-resource`) ||
+        Path(`/.well-known/oauth-protected-resource/mcp`) ||
+        Path(`/oauth/token`) || Path(`/oauth/register`) || Path(`/oauth/revoke`))
+      traefik.http.routers.skyhouse-wiki-mcp.priority: "150"
+      traefik.http.routers.skyhouse-wiki-mcp.entrypoints: websecure
+      traefik.http.routers.skyhouse-wiki-mcp.tls.certresolver: letsencrypt
+      traefik.http.routers.skyhouse-wiki-mcp.service: skyhouse-wiki
+      traefik.http.routers.skyhouse-wiki-mcp.middlewares: skyhouse-wiki-no-identity
+      # The MCP hub's admin contract, behind MCP_HUB_TOKEN. Every path under
+      # the prefix ends in the contract's own router, unknown ones answer 404.
+      traefik.http.routers.skyhouse-wiki-hub.rule: Host(`wiki.skyhouse.ai`) && (Path(`/admin/mcp`) || PathPrefix(`/admin/mcp/`))
+      traefik.http.routers.skyhouse-wiki-hub.priority: "150"
+      traefik.http.routers.skyhouse-wiki-hub.entrypoints: websecure
+      traefik.http.routers.skyhouse-wiki-hub.tls.certresolver: letsencrypt
+      traefik.http.routers.skyhouse-wiki-hub.service: skyhouse-wiki
+      traefik.http.routers.skyhouse-wiki-hub.middlewares: skyhouse-wiki-no-identity
+      # Without the SSO gate nothing may claim to be a person through a header:
+      # the forward-auth plugin trusts X-Auth-Request-Email. Traefik removes a
+      # request header set to an empty value.
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Auth-Request-Email: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Auth-Request-User: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Auth-Request-Groups: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Auth-Request-Preferred-Username: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Auth-Request-Access-Token: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Forwarded-Email: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Forwarded-User: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Forwarded-Groups: ""
+      traefik.http.middlewares.skyhouse-wiki-no-identity.headers.customrequestheaders.X-Forwarded-Preferred-Username: ""
     networks:
       ingress:
         aliases:

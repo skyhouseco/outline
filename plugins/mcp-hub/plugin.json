@@ -1,0 +1,6 @@
+{
+  "id": "mcp-hub",
+  "name": "MCP hub",
+  "priority": 50,
+  "description": "Serves the SkyHouse MCP hub's admin contract under /admin/mcp: MCP usage, connections, key revocation and blocking people."
+}

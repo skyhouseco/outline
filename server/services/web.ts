@@ -16,6 +16,7 @@ import { attachCSRFToken } from "@server/middlewares/csrf";
 import { userAgent } from "@server/middlewares/userAgent";
 import { ShutdownHelper, ShutdownOrder } from "@server/utils/ShutdownHelper";
 import { initI18n } from "@server/utils/i18n";
+import { Hook, PluginManager } from "@server/utils/PluginManager";
 import routes from "../routes";
 import api from "../routes/api";
 import auth from "../routes/auth";
@@ -85,6 +86,9 @@ export default function init(app: Koa = new Koa(), server?: Server) {
 
   app.use(mount("/api", api));
   app.use(mount("/mcp", mcp));
+  PluginManager.getHooks(Hook.Mount).forEach((hook) =>
+    app.use(mount(hook.value.path, hook.value.app))
+  );
 
   // Generate and attach a CSRF token to the session on non-API requests
   app.use(attachCSRFToken());
