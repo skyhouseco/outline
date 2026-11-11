@@ -147,6 +147,17 @@ describe("/admin/mcp", () => {
       expect(typeof rows[0].ms_p95).toEqual("number");
     });
 
+    it("should not count tools that do not exist", async () => {
+      const { user, accessToken } = await buildOAuthUser();
+      await callMcpTool(server, accessToken, "made_up_tool");
+      await callMcpTool(server, accessToken, "list_users");
+
+      const rows = await waitForUsage(user.email!);
+      expect(rows.map((row: { tool: string }) => row.tool)).toEqual([
+        "list_users",
+      ]);
+    });
+
     it("should count API key calls and failures", async () => {
       const { user } = await buildOAuthUser();
       const key = await buildApiKey({ userId: user.id });

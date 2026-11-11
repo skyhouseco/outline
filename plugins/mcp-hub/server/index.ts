@@ -4,6 +4,7 @@ import config from "../plugin.json";
 import admin, { AdminPath } from "./admin";
 import env from "./env";
 import { isBlocked, normalizeEmail, recordCall } from "./store";
+import { toolNames } from "./tools";
 
 /** The message a blocked person gets on every MCP call. */
 const BlockedMessage = "Your access to this MCP was turned off by an admin.";
@@ -24,7 +25,12 @@ PluginManager.add({
       const email = normalizeEmail(user.email);
       return email && (await isBlocked(email)) ? BlockedMessage : undefined;
     },
-    onToolCall: recordCall,
+    onToolCall: async (call) => {
+      // Requests may name any tool, only real ones are counted as usage.
+      if (toolNames().has(call.tool)) {
+        await recordCall(call);
+      }
+    },
   },
 });
 

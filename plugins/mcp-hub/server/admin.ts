@@ -3,10 +3,8 @@ import Koa from "koa";
 import type { Context, Next } from "koa";
 import bodyParser from "koa-body";
 import Router from "@koa/router";
-import { Scope } from "@shared/types";
 import { toError } from "@shared/utils/error";
 import Logger from "@server/logging/Logger";
-import { createMcpServer } from "@server/mcp";
 import { sequelize } from "@server/storage/database";
 import { version as packageVersion } from "../../../package.json";
 import env from "./env";
@@ -20,6 +18,7 @@ import {
   unblock,
   usage,
 } from "./store";
+import { toolNames } from "./tools";
 
 /** The contract version served, see mcp-hub/docs/CONTRACT.md. */
 export const ContractVersion = 1;
@@ -86,7 +85,7 @@ router.get("/health", async (ctx) => {
     contract: ContractVersion,
     app: "wiki",
     version: env.VERSION?.slice(0, 12) || packageVersion,
-    tools: toolCount(),
+    tools: toolNames().size,
     ok,
   };
 });
@@ -306,17 +305,4 @@ async function requireActingAdmin(ctx: Context, next: Next) {
 function noSuchLimit(ctx: Context) {
   ctx.status = 404;
   ctx.body = { error: "The wiki has no limit with that key." };
-}
-
-/**
- * Counts the MCP tools available with every scope granted.
- *
- * @returns the number of tools.
- */
-function toolCount(): number {
-  const server = createMcpServer(env.URL, Object.values(Scope));
-
-  // The SDK keeps registered tools in a private map and has no public count.
-  const tools: unknown = Reflect.get(server, "_registeredTools");
-  return tools && typeof tools === "object" ? Object.keys(tools).length : 0;
 }
