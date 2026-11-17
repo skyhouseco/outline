@@ -62,6 +62,14 @@ services:
       # Secret of the SkyHouse MCP hub (plugins/mcp-hub), the same value as the
       # wiki's secret on the hub's Apps page. Unset turns /admin/mcp off.
       MCP_HUB_TOKEN: ${MCP_HUB_TOKEN:-}
+      # The person's own Microsoft access token on /mcp, forwarded by the MCP
+      # hub: the SkyHouse tenant and the "Skyhouse Internal SSO" app, both
+      # public ids. Set both to an empty value to turn it off.
+      AUTH_ENTRA_TENANT_ID: ${AUTH_ENTRA_TENANT_ID-aa08167d-feb6-4390-9e0a-d8744267dcb4}
+      AUTH_ENTRA_CLIENT_ID: ${AUTH_ENTRA_CLIENT_ID-e10e22d5-dc15-43a8-afba-1e044eb2a72e}
+      # Default wiki.mcp.access, and the Claude MCP Client.
+      MCP_ENTRA_SCOPE: ${MCP_ENTRA_SCOPE:-}
+      MCP_CLIENT_APP_IDS: ${MCP_CLIENT_APP_IDS:-}
     configs:
       - source: wiki_postgres_ca
         target: /etc/outline/wiki-postgres-ca.crt

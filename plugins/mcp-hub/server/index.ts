@@ -2,6 +2,7 @@ import Logger from "@server/logging/Logger";
 import { Hook, PluginManager } from "@server/utils/PluginManager";
 import config from "../plugin.json";
 import admin, { AdminPath } from "./admin";
+import { authenticateEntraToken, entraRateLimitIdentifier } from "./entraAuth";
 import env from "./env";
 import { isBlocked, normalizeEmail, recordCall } from "./store";
 import { toolNames } from "./tools";
@@ -21,6 +22,9 @@ PluginManager.add({
   ...config,
   type: Hook.MCP,
   value: {
+    // Off without AUTH_ENTRA_TENANT_ID and AUTH_ENTRA_CLIENT_ID.
+    authenticate: authenticateEntraToken,
+    rateLimitIdentifier: entraRateLimitIdentifier,
     refuse: async (user) => {
       const email = normalizeEmail(user.email);
       return email && (await isBlocked(email)) ? BlockedMessage : undefined;
@@ -36,4 +40,8 @@ PluginManager.add({
 
 if (env.MCP_HUB_TOKEN) {
   Logger.info("plugins", "MCP hub contract enabled");
+}
+
+if (env.AUTH_ENTRA_TENANT_ID && env.AUTH_ENTRA_CLIENT_ID) {
+  Logger.info("plugins", "MCP accepts Microsoft Entra access tokens");
 }

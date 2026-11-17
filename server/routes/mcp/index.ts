@@ -14,7 +14,7 @@ import env from "@server/env";
 import { NotFoundError } from "@server/errors";
 import Logger from "@server/logging/Logger";
 import { createMcpServer } from "@server/mcp";
-import auth from "@server/middlewares/authentication";
+import auth, { parseAuthentication } from "@server/middlewares/authentication";
 import { rateLimiter } from "@server/middlewares/rateLimiter";
 import requestTracer from "@server/middlewares/requestTracer";
 import type { User } from "@server/models";
@@ -111,6 +111,50 @@ async function validateOrigin(ctx: APIContext, next: Next) {
   return next();
 }
 
+const outlineAuthentication = auth({
+  type: [
+    AuthenticationType.MCP,
+    AuthenticationType.OAUTH,
+    AuthenticationType.API,
+  ],
+});
+
+/**
+ * Authenticates the request with a bearer token verified by an MCP plugin,
+ * such as a Microsoft Entra access token forwarded by the MCP hub, or else
+ * with Outline's own tokens. Plugin tokens are accepted on this route only.
+ *
+ * @param ctx - the Koa context.
+ * @param next - the next middleware.
+ */
+async function authentication(ctx: APIContext, next: Next) {
+  const { token } = parseAuthentication(ctx, ["header"]);
+
+  if (token) {
+    for (const hook of PluginManager.getHooks(Hook.MCP)) {
+      const result = await hook.value.authenticate?.(ctx, token);
+      if (!result) {
+        continue;
+      }
+
+      // A valid sign-in for a person who may not use the MCP server, signing
+      // in again would not help, so no challenge is sent.
+      if ("refused" in result) {
+        ctx.status = 403;
+        ctx.body = { error: result.refused };
+        return;
+      }
+
+      const { user, type, scope } = result;
+      await Promise.all([user.updateActiveAt(ctx), user.team.updateActiveAt()]);
+      ctx.state.auth = { user, token, type, scope };
+      return next();
+    }
+  }
+
+  return outlineAuthentication(ctx, next);
+}
+
 /**
  * Converts the Koa request to a web request. The body is not copied, as the
  * SDK reads the parsed body instead.
@@ -161,13 +205,7 @@ app.use(async (ctx, next) => {
 router.post(
   "/",
   rateLimiter(RateLimiterStrategy.OneThousandPerHour),
-  auth({
-    type: [
-      AuthenticationType.MCP,
-      AuthenticationType.OAUTH,
-      AuthenticationType.API,
-    ],
-  }),
+  authentication,
   validateOrigin,
   async (ctx) => {
     const { user, token, scope, type } = ctx.state.auth;
