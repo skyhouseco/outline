@@ -10,8 +10,12 @@ import { ApiKey, OAuthAuthentication } from "@server/models";
 import Redis from "@server/storage/redis";
 import type { AppContext } from "@server/types";
 import { getUserForJWT } from "@server/utils/jwt";
+import { Hook, PluginManager } from "@server/utils/PluginManager";
 import RateLimiter from "@server/utils/RateLimiter";
 import { parseAuthentication } from "./authentication";
+
+/** The path of the MCP endpoint, where MCP plugins may key requests. */
+const McpPath = "/mcp";
 
 /**
  * Returns the identifiers a request is rate limited against. Identifiers are
@@ -24,14 +28,31 @@ import { parseAuthentication } from "./authentication";
  * addresses – they remain keyed on the address too because the credential is
  * only pattern matched at this point, not yet verified.
  *
+ * On the MCP endpoint, a token an MCP plugin verifies, such as a Microsoft
+ * access token forwarded by the MCP hub for many people from one address, is
+ * keyed on the person only. Any other token is limited as above.
+ *
  * @param ctx The application context.
+ * @param fullPath The normalized path of the request.
  * @returns The identifiers to consume for this request.
  */
-async function getRateLimiterIdentifiers(ctx: AppContext): Promise<string[]> {
+async function getRateLimiterIdentifiers(
+  ctx: AppContext,
+  fullPath: string
+): Promise<string[]> {
   try {
     const { token } = parseAuthentication(ctx);
     if (!token) {
       return [ctx.ip];
+    }
+
+    if (fullPath === McpPath) {
+      for (const hook of PluginManager.getHooks(Hook.MCP)) {
+        const identifier = await hook.value.rateLimitIdentifier?.(token);
+        if (identifier) {
+          return [identifier];
+        }
+      }
     }
 
     if (ApiKey.match(token) || OAuthAuthentication.match(token)) {
@@ -118,7 +139,7 @@ export function defaultRateLimiter() {
     const fullPath = RateLimiter.normalizePath(
       `${ctx.mountPath ?? ""}${ctx.path}`
     );
-    const identifiers = await getRateLimiterIdentifiers(ctx);
+    const identifiers = await getRateLimiterIdentifiers(ctx, fullPath);
 
     // Kept for a route that registers its own limiter further down the chain,
     // so that it can charge this request without resolving them again.
@@ -185,7 +206,7 @@ export function rateLimiter(config: RateLimiterConfig) {
         ctx,
         fullPath,
         ctx.state.rateLimiterIdentifiers ??
-          (await getRateLimiterIdentifiers(ctx))
+          (await getRateLimiterIdentifiers(ctx, fullPath))
       );
     }
 

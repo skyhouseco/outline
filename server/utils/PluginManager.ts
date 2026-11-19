@@ -76,6 +76,22 @@ export interface McpToolCall {
   durationMs: number;
 }
 
+/** A user signed in to the MCP server with a token verified by a plugin. */
+export interface McpAuthentication {
+  /** The user the request is made as, with their team loaded. */
+  user: User;
+  /** How the caller authenticated, counted like other MCP connections. */
+  type: AuthenticationType;
+  /** The scopes granted to the request. */
+  scope: string[];
+}
+
+/** A valid sign-in for a person who may not use the MCP server. */
+export interface McpRefusal {
+  /** Why, and what to do, in a plain sentence. */
+  refused: string;
+}
+
 /**
  * A map of plugin types to their values, for example an API plugin would have a value of type
  * Router. Registering an API plugin causes the router to be mounted.
@@ -124,6 +140,24 @@ type PluginValueMap = {
   [Hook.UnfurlProvider]: { unfurl: UnfurlSignature; cacheExpiry: number };
   [Hook.GroupSyncProvider]: { id: string; provider: GroupSyncProvider };
   [Hook.MCP]: {
+    /**
+     * Verifies a bearer token that Outline does not issue, such as an access
+     * token from the company's identity provider, on the MCP server only.
+     * Returns undefined when the token is not one the plugin handles, Outline's
+     * own authentication then applies. Throws when the token is not valid,
+     * and returns a refusal, answered with a 403, when it is valid but its
+     * person may not use the MCP server.
+     */
+    authenticate?: (
+      ctx: Context,
+      token: string
+    ) => Promise<McpAuthentication | McpRefusal | undefined>;
+    /**
+     * Returns who a bearer token belongs to, so /mcp is rate limited per
+     * person rather than per address. Only for a token the plugin verifies,
+     * undefined otherwise, the request is then limited as usual.
+     */
+    rateLimitIdentifier?: (token: string) => Promise<string | undefined>;
     /**
      * Returns a message when the user may not use the MCP server, the request
      * is then refused with it. Runs after the credential is verified.

@@ -251,6 +251,15 @@ export function RequestTimeoutError(
   });
 }
 
+export function ServiceUnavailableError(
+  message = "A service this request depends on is unavailable"
+) {
+  return httpErrors(503, message, {
+    id: "service_unavailable",
+    isReportable: false,
+  });
+}
+
 export function ClientClosedRequestError(
   message = "Client closed request before response was received"
 ) {
