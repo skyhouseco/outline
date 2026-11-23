@@ -27,6 +27,9 @@ import {
 
 const SELF_TOKENS = new Set(["self", "me", "current_user"]);
 
+// The most document text returned by one call, in characters. Longer documents are read in parts with "offset".
+const MAX_TEXT_LENGTH = 50_000;
+
 /**
  * Extracts a resource identifier from a value that may be a URL or a plain ID.
  * When a URL is detected the last non-empty path segment is returned as the
@@ -101,7 +104,7 @@ export function fetchTool(server: McpServer, scopes: string[]) {
     {
       title: "Fetch",
       description:
-        'Fetches a document, collection, user, attachment, or template by type and ID. When fetching a collection the response includes the full hierarchical document tree. For users, "current_user" can be used as the ID to get the authenticated user. For attachments, the response includes a short-lived signed URL that can be used to download the file contents directly. For templates, the response includes the template body as markdown.',
+        'Fetches a document, collection, user, attachment, or template by type and ID. When fetching a document the response includes its text as markdown, at most 50,000 characters per call: a longer document says it was truncated and gives the offset to pass to read the rest. When fetching a collection the response includes the full hierarchical document tree. For users, "current_user" can be used as the ID to get the authenticated user. For attachments, the response includes a short-lived signed URL that can be used to download the file contents directly. For templates, the response includes the template body as markdown.',
       annotations: {
         destructiveHint: false,
         idempotentHint: true,
@@ -115,9 +118,17 @@ export function fetchTool(server: McpServer, scopes: string[]) {
           .describe(
             'The unique identifier or URL. For users, "current_user" returns the authenticated user.'
           ),
+        offset: z
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "For documents, the character position to start the text from, to read a long document in parts. Defaults to 0."
+          ),
       }),
     },
-    withTracing("fetch", async ({ resource, id: rawId }, extra) => {
+    withTracing("fetch", async ({ resource, id: rawId, offset = 0 }, extra) => {
       try {
         const actor = getActorFromContext(extra);
         const id = extractId(rawId);
@@ -142,6 +153,11 @@ export function fetchTool(server: McpServer, scopes: string[]) {
                 getDocumentBreadcrumb(document, actor),
                 getPublicShareUrlForDocument(actor.team, document.id),
               ]);
+            const fullText = typeof text === "string" ? text : "";
+            const start = Math.min(offset, fullText.length);
+            const end = Math.min(start + MAX_TEXT_LENGTH, fullText.length);
+            const partial = start > 0 || end < fullText.length;
+
             return {
               content: [
                 {
@@ -150,12 +166,27 @@ export function fetchTool(server: McpServer, scopes: string[]) {
                     document: pathToUrl(actor.team, attributes),
                     ...(breadcrumb !== undefined && { breadcrumb }),
                     ...(shareUrl !== undefined && { shareUrl }),
+                    ...(partial && {
+                      textRange: {
+                        offset: start,
+                        end,
+                        totalLength: fullText.length,
+                      },
+                    }),
                   }),
                 },
                 {
                   type: "text" as const,
-                  text: typeof text === "string" ? text : "",
+                  text: fullText.slice(start, end),
                 },
+                ...(end < fullText.length
+                  ? [
+                      {
+                        type: "text" as const,
+                        text: `Text truncated: this shows characters ${start} to ${end} of ${fullText.length}. Call fetch again with offset ${end} to read the rest.`,
+                      },
+                    ]
+                  : []),
               ],
             } satisfies CallToolResult;
           }
