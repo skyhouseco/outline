@@ -113,6 +113,47 @@ describe("fetch", () => {
     expect(res!.result!.content![1].text).toContain("Hello");
   });
 
+  it("bounds long document text and reads the rest with offset", async () => {
+    const { user, accessToken } = await buildOAuthUser();
+    const collection = await buildCollection({
+      teamId: user.teamId,
+      userId: user.id,
+    });
+    const document = await buildDocument({
+      teamId: user.teamId,
+      userId: user.id,
+      collectionId: collection.id,
+      text: "a".repeat(60_000),
+    });
+
+    const first = await callMcpTool(server, accessToken, "fetch", {
+      resource: "document",
+      id: document.id,
+    });
+    const firstContent = first?.result?.content ?? [];
+    expect(firstContent.length).toEqual(3);
+    expect(firstContent[1].text?.length).toEqual(50_000);
+    expect(firstContent[2].text).toContain("offset 50000");
+
+    const firstRange = JSON.parse(firstContent[0].text ?? "{}").textRange;
+    expect(firstRange.offset).toEqual(0);
+    expect(firstRange.end).toEqual(50_000);
+
+    const rest = await callMcpTool(server, accessToken, "fetch", {
+      resource: "document",
+      id: document.id,
+      offset: 50_000,
+    });
+    const restContent = rest?.result?.content ?? [];
+    expect(restContent.length).toEqual(2);
+    expect(restContent[1].text?.length).toEqual(
+      firstRange.totalLength - 50_000
+    );
+    expect(JSON.parse(restContent[0].text ?? "{}").textRange.offset).toEqual(
+      50_000
+    );
+  });
+
   it("returns the public share url for a shared document", async () => {
     const { user, accessToken } = await buildOAuthUser();
     const collection = await buildCollection({
